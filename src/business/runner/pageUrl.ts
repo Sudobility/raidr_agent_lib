@@ -17,7 +17,12 @@
  *      first match wins;
  *   e. the URL's host must be one of the site origins' hosts (or a
  *      subdomain of one), else it is discarded and the next one is tried;
- *   f. no match → `''`.
+ *   f. else a link on the item itself ({@link itemLink}): an absolute
+ *      on-site URL in a link-named field, a site path (`/e/123`) resolved
+ *      against the site, or a bare slug when the site's routes show pages
+ *      live at `/{slug}`; the item's own fields before nested ones, never a
+ *      host's, venue's or image's;
+ *   g. no match → `''`.
  *
  * RN-safe: no `URL` class.
  */
@@ -185,6 +190,22 @@ export function buildPageUrl(
 ): string {
   const item = resolvePath(body, source.itemPath);
   if (item === undefined || item === null) return '';
+  return (
+    routePageUrl(routes, source, body, siteOrigins) ||
+    // f. a link the item carries itself
+    itemLink(item, routes, siteOrigins)
+  );
+}
+
+/** Rules a–e only: the page from the site's routes, or `''`. */
+export function routePageUrl(
+  routes: SitePageRoute[],
+  source: Pick<ResultSource, 'endpoint' | 'itemPath'>,
+  body: unknown,
+  siteOrigins: string[]
+): string {
+  const item = resolvePath(body, source.itemPath);
+  if (item === undefined || item === null) return '';
   const ordered = orderRoutes(routes);
   const field = (f: string): unknown => {
     const rest = relativeField(f, source.itemPath);
@@ -228,6 +249,84 @@ export function buildPageUrl(
     if (unresolved) continue;
     const clean = cleanUrl(url);
     if (clean && isOnSite(clean, siteOrigins)) return clean;
+  }
+  return '';
+}
+
+/** Fields that hold an item's own page: a full URL, a path or a slug. */
+const LINK_FIELD =
+  /^(url|permalink|link|href|web_?url|share_?url|canonical_?url|seo_?url|page_?url|full_?url|public_?url|event_?url|slug|path)$/i;
+/** Nested objects that describe something else (who hosts it, where, its picture). */
+const OTHER_THING =
+  /^(hosts?|organi[sz]ers?|calendar|creator|owner|user|author|venue|place|location|images?|cover|photos?|media|thumbnail|avatar|brand|seller|merchant)$/i;
+/** A slug: one path segment of URL-safe characters. */
+const SLUG = /^[A-Za-z0-9][A-Za-z0-9_.~-]{2,127}$/;
+
+/** The site's primary origin, without a trailing slash. */
+function primaryOrigin(siteOrigins: string[]): string | null {
+  for (const origin of siteOrigins) {
+    const clean = cleanUrl(origin);
+    if (clean) {
+      const parsed = parseHttpUrl(clean);
+      if (parsed) return `${parsed.protocol}://${parsed.host}`;
+    }
+  }
+  return null;
+}
+
+/** Whether the site's routes put pages at `/{slug}` (Luma: `/{url}`, `/{url}/claim`). */
+function slugPagesAtRoot(routes: SitePageRoute[], origin: string): boolean {
+  return routes.some(route => {
+    const parsed = parseHttpUrl(route.url.replace(/\{[^{}]+\}/g, 'x'));
+    if (!parsed || parsed.host !== parseHttpUrl(origin)?.host) return false;
+    return /^\/\{[^{}/]+\}(\/|$|\?)/.test(
+      route.url.slice(route.url.indexOf(parsed.host) + parsed.host.length)
+    );
+  });
+}
+
+/**
+ * Rule f: a page link carried by the item itself, breadth-first (its own
+ * fields, then nested objects other than {@link OTHER_THING}), at most three
+ * levels down: an absolute on-site URL, a path on the site, or a bare slug
+ * when {@link slugPagesAtRoot}. `''` when none.
+ */
+export function itemLink(
+  item: unknown,
+  routes: SitePageRoute[],
+  siteOrigins: string[]
+): string {
+  const origin = primaryOrigin(siteOrigins);
+  let level: unknown[] = [item];
+  for (let depth = 0; depth < 3 && level.length > 0; depth++) {
+    const next: unknown[] = [];
+    for (const node of level) {
+      if (!node || typeof node !== 'object' || Array.isArray(node)) continue;
+      for (const [key, value] of Object.entries(
+        node as Record<string, unknown>
+      )) {
+        if (value && typeof value === 'object') {
+          if (!Array.isArray(value) && !OTHER_THING.test(key)) next.push(value);
+          continue;
+        }
+        if (!LINK_FIELD.test(key) || typeof value !== 'string') continue;
+        const text = value.trim();
+        const absolute = cleanUrl(text);
+        if (absolute) {
+          if (isOnSite(absolute, siteOrigins)) return absolute;
+          continue;
+        }
+        if (!origin) continue;
+        if (text.startsWith('/') && !text.startsWith('//')) {
+          const url = cleanUrl(`${origin}${text}`);
+          if (url && isOnSite(url, siteOrigins)) return url;
+        } else if (SLUG.test(text) && slugPagesAtRoot(routes, origin)) {
+          const url = cleanUrl(`${origin}/${encodeURIComponent(text)}`);
+          if (url) return url;
+        }
+      }
+    }
+    level = next;
   }
   return '';
 }

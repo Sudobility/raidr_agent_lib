@@ -23,6 +23,7 @@ export const STEP_ENDPOINTS: Record<AgentStep, string> = {
   extract: 'extract-results',
   'pick-best': 'pick-best',
   dedupe: 'dedupe-results',
+  'site-regions': 'site-regions',
 };
 
 const str = (description: string, extra: Json = {}): Json => ({
@@ -45,7 +46,7 @@ const location: Json = {
 const intentInput: Json = {
   type: 'object',
   description:
-    'The understood request (output of understand-intent): intent, labels, slots, resultKind, query, what, who, how, when, where, why, selection, location_needed.',
+    'The understood request (output of understand-intent): intent, labels, slots, resultKind, query, what, who, how, when, where, why, selection, location_needed, language (write everything for the user in it).',
 };
 
 const site: Json = {
@@ -197,8 +198,12 @@ const understandOutput: Json = {
       type: 'boolean',
       description: 'true exactly when where.kind is current.',
     },
+    language: str(
+      'BCP 47 tag of the language the request is written in: en, de, es, fr, it, pt, sv, ru, uk, ja, ko, th, vi, zh-Hans (Simplified Chinese), zh-Hant (Traditional Chinese)… Everything shown to the user is written in it.'
+    ),
   },
   required: [
+    'language',
     'intent',
     'labels',
     'slots',
@@ -248,8 +253,18 @@ const planSearchOutput: Json = {
     reason: str('One short sentence: why searching first helps, or why not.', {
       maxLength: 300,
     }),
+    sites: {
+      type: 'array',
+      description:
+        "Domains of the best-known websites for this request in the user's region, most relevant first (e.g. lu.ma, eventbrite.com, meetup.com for tech events in San Francisco); at most 8. Empty for the user's own account data.",
+      items: { type: 'string', maxLength: 100 },
+      maxItems: 8,
+    },
+    target_country: str(
+      'ISO 3166-1 alpha-2 of the country the request is about: the user\'s country, or the destination\'s when the request is about a place abroad ("Hamilton tickets in London" → GB); empty for something online or worldwide. Sites that do not serve it are left out.'
+    ),
   },
-  required: ['search', 'country', 'query', 'reason'],
+  required: ['search', 'country', 'query', 'reason', 'sites', 'target_country'],
 };
 
 // =============================================================================
@@ -286,6 +301,11 @@ const rankInput: Json = {
               },
               required: ['url', 'title'],
             },
+          },
+          canSearch: {
+            type: 'boolean',
+            description:
+              "true when one of the site's tools takes keywords (q, query, search…), so it can search for exactly what was asked; false when it can only list or look up.",
           },
           tools: {
             type: 'array',
@@ -481,6 +501,12 @@ const planInput: Json = {
       description: 'Every tool you may call (name, description, inputSchema).',
       items: { type: 'object' },
     },
+    graphqlSchemas: {
+      type: 'object',
+      description:
+        "For GraphQL tools: tool name → the site's schema as GraphQL SDL lines (root query fields with arguments, then the types and enums reachable from them). Write queries with exactly these field and argument names.",
+      additionalProperties: { type: 'string' },
+    },
     history: {
       type: 'array',
       description:
@@ -545,6 +571,12 @@ const extractInput: Json = {
     },
     location,
     site,
+    language: str(
+      "BCP 47 tag of the user's language (the request's): write summary, field labels and field values in it; keep titles and names as the site gives them."
+    ),
+    completeness: str(
+      'How many items to return: every matching item, not a selection.'
+    ),
     responses: {
       type: 'array',
       description: 'Successful API responses of this run.',
@@ -570,7 +602,7 @@ const extractOutput: Json = {
       type: 'array',
       description:
         'Up to 10 results that answer the request, best first. Only things present in the responses.',
-      maxItems: 10,
+      maxItems: 30,
       items: {
         type: 'object',
         properties: {
@@ -763,6 +795,59 @@ const dedupeOutput: Json = {
   required: ['groups'],
 };
 
+// =============================================================================
+// site-regions
+// =============================================================================
+
+const siteRegionsInput: Json = {
+  type: 'object',
+  properties: {
+    sites: {
+      type: 'array',
+      description: 'The websites to place, at most 40.',
+      items: {
+        type: 'object',
+        properties: {
+          domain: str('Registrable domain, e.g. africatickets.org.'),
+          title: str("The site's name in the catalog."),
+          description: str('What the site offers.'),
+        },
+        required: ['domain', 'title', 'description'],
+      },
+    },
+  },
+  required: ['sites'],
+};
+
+const siteRegionsOutput: Json = {
+  type: 'object',
+  properties: {
+    sites: {
+      type: 'array',
+      description: 'One entry per input site, same domain.',
+      items: {
+        type: 'object',
+        properties: {
+          domain: str('The domain, copied exactly from the input.'),
+          global: {
+            type: 'boolean',
+            description:
+              'true when the site serves users in most countries (eventbrite.com, amazon.com, booking.com); false when it serves only some countries.',
+          },
+          countries: {
+            type: 'array',
+            description:
+              'When global is false: ISO 3166-1 alpha-2 codes of the countries it serves (africatickets.org → ["NG","KE","GH","ZA",...]). Empty when global is true.',
+            items: { type: 'string', maxLength: 2 },
+          },
+        },
+        required: ['domain', 'global', 'countries'],
+      },
+    },
+  },
+  required: ['sites'],
+};
+
 /** Input and output JSON Schemas of every step's endpoint. */
 export const STEP_SCHEMAS: Record<AgentStep, { input: Json; output: Json }> = {
   understand: { input: understandInput, output: understandOutput },
@@ -773,4 +858,5 @@ export const STEP_SCHEMAS: Record<AgentStep, { input: Json; output: Json }> = {
   extract: { input: extractInput, output: extractOutput },
   'pick-best': { input: pickBestInput, output: pickBestOutput },
   dedupe: { input: dedupeInput, output: dedupeOutput },
+  'site-regions': { input: siteRegionsInput, output: siteRegionsOutput },
 };

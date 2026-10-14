@@ -18,6 +18,7 @@ import type {
   ResultItem,
   SearchPlan,
   SitePlan,
+  SiteServiceArea,
   ToolAuth,
 } from '@sudobility/raidr_agent_types';
 import type { AiTransport, SiteCatalog, SiteContextSource } from './runner';
@@ -25,11 +26,14 @@ import { loadSiteContext, rankTools } from './runner';
 import {
   dedupeSchema,
   MAX_PREPARED_TOOLS,
+  MAX_REGION_SITES,
   pickBestSchema,
   prepareSchema,
   rankSitesSchema,
+  siteRegionsSchema,
+  type SitesPlan,
   toAgentIntent,
-  toSearchPlan,
+  toSitesPlan,
 } from './schemas';
 import { MAX_HITS_PER_SITE } from './search';
 
@@ -85,16 +89,17 @@ export interface PlanSearchInput {
 }
 
 /**
- * `plan-search`: whether to search the web before choosing sites, where and
- * for what. A request for one specific thing (an artist's concert tickets)
- * gets a plan; a generic one ("events around me") gets null. Optional: a
- * model error or an unusable answer is null too, and the flow goes on
- * without searching.
+ * `plan-search`: which well-known sites serve this request in the user's
+ * region (from the model's own knowledge), and whether to also search the web
+ * first, where and for what. The sites are what the catalog's labels cannot
+ * tell apart ("tech events in San Francisco": Luma and Eventbrite, not a
+ * ticket shop abroad). Optional: a model error or an unusable answer is no
+ * sites and no search, and the flow goes on with the label candidates.
  */
-export async function planSearch(
+export async function planSites(
   ai: AiTransport,
   input: PlanSearchInput
-): Promise<SearchPlan | null> {
+): Promise<SitesPlan> {
   let output: unknown;
   try {
     output = await ai.invoke('plan-search', {
@@ -104,9 +109,82 @@ export async function planSearch(
       ...(input.locale ? { locale: input.locale } : {}),
     });
   } catch {
-    return null;
+    return toSitesPlan(null, input.country);
   }
-  return toSearchPlan(output, input.country);
+  return toSitesPlan(output, input.country);
+}
+
+// =============================================================================
+// site-regions
+// =============================================================================
+
+/** A site to classify: what the model needs to tell where it serves. */
+export interface SiteToClassify {
+  /** Registrable domain (`africatickets.org`). */
+  domain: string;
+  title: string;
+  description: string;
+}
+
+/**
+ * `site-regions`: where each site serves people (worldwide, or which
+ * countries), from its domain, title and description. Only the domains asked
+ * about come back, and only usable answers (worldwide, or at least one
+ * country); a model error is no answers, and the caller treats those sites
+ * as unknown.
+ */
+export async function classifySiteRegions(
+  ai: AiTransport,
+  sites: SiteToClassify[]
+): Promise<SiteServiceArea[]> {
+  const byDomain = new Map<string, SiteToClassify>();
+  for (const site of sites) {
+    const domain = site.domain.trim().toLowerCase();
+    if (domain && !byDomain.has(domain))
+      byDomain.set(domain, { ...site, domain });
+  }
+  const asked = [...byDomain.values()].slice(0, MAX_REGION_SITES);
+  if (asked.length === 0) return [];
+  let output: unknown;
+  try {
+    output = await ai.invoke('site-regions', {
+      sites: asked.map(s => ({
+        domain: s.domain,
+        title: s.title.slice(0, 200),
+        description: s.description.slice(0, 400),
+      })),
+    });
+  } catch {
+    return [];
+  }
+  const parsed = siteRegionsSchema.safeParse(output);
+  if (!parsed.success) return [];
+  const wanted = new Set(asked.map(s => s.domain));
+  const seen = new Set<string>();
+  const areas: SiteServiceArea[] = [];
+  for (const answer of parsed.data.sites) {
+    if (!wanted.has(answer.domain) || seen.has(answer.domain)) continue;
+    if (!answer.global && answer.countries.length === 0) continue;
+    seen.add(answer.domain);
+    areas.push({
+      domain: answer.domain,
+      global: answer.global,
+      countries: answer.global ? [] : answer.countries,
+    });
+  }
+  return areas;
+}
+
+/**
+ * The web-search half of {@link planSites}: a request for one specific thing
+ * (an artist's concert tickets) gets a plan; a generic one ("events around
+ * me") gets null, as does a model error.
+ */
+export async function planSearch(
+  ai: AiTransport,
+  input: PlanSearchInput
+): Promise<SearchPlan | null> {
+  return (await planSites(ai, input)).search;
 }
 
 // =============================================================================
@@ -127,26 +205,56 @@ export interface RankSitesInput {
 }
 
 /** A candidate's most relevant tools, as `rank-sites` sees them. */
+/** Parameters that take the user's words: a tool with one can search for exactly what was asked. */
+const SEARCH_PARAM =
+  /^(q|query|search|keywords?|term|text|search_?term|search_?query|search_?text|searchterm)$/i;
+
+/** Whether any of these tools searches by keyword (has a `q`/`query`/`search`… parameter). */
+export function toolsCanSearch(
+  tools: Array<{ inputSchema?: unknown }>
+): boolean {
+  return tools.some(t =>
+    Object.keys(
+      ((t.inputSchema ?? {}) as { properties?: Record<string, unknown> })
+        .properties ?? {}
+    ).some(p => SEARCH_PARAM.test(p))
+  );
+}
+
+/**
+ * What `rank-sites` sees of a candidate's tools: the most relevant ones, and
+ * whether any tool searches by keyword (`canSearch`).
+ */
 async function rankingTools(
   catalog: SiteCatalog,
   apiHost: string,
   text: string
-): Promise<Array<{ name: string; description: string; params: string[] }>> {
+): Promise<{
+  tools: Array<{ name: string; description: string; params: string[] }>;
+  canSearch: boolean;
+} | null> {
   try {
     const manifest = await catalog.manifest(apiHost);
-    return rankTools(manifest.tools, text)
-      .slice(0, RANK_TOOLS_PER_SITE)
-      .map(t => ({
-        name: t.name,
-        description: (t.description ?? '').slice(0, 160),
-        params: Object.keys(
-          (t.inputSchema as { properties?: Record<string, unknown> })
-            .properties ?? {}
-        ).slice(0, 12),
-      }));
+    const paramsOf = (t: { inputSchema?: unknown }) =>
+      Object.keys(
+        ((t.inputSchema ?? {}) as { properties?: Record<string, unknown> })
+          .properties ?? {}
+      );
+    return {
+      tools: rankTools(manifest.tools, text)
+        .slice(0, RANK_TOOLS_PER_SITE)
+        .map(t => ({
+          name: t.name,
+          description: (t.description ?? '').slice(0, 160),
+          params: paramsOf(t).slice(0, 12),
+        })),
+      canSearch: manifest.tools.some(t =>
+        paramsOf(t).some(p => SEARCH_PARAM.test(p))
+      ),
+    };
   } catch {
     // An unreadable manifest just ranks on the description.
-    return [];
+    return null;
   }
 }
 
@@ -192,7 +300,8 @@ export async function rankSites(
             })),
           }
         : {}),
-      ...(tools[i]?.length ? { tools: tools[i] } : {}),
+      ...(tools[i]?.tools.length ? { tools: tools[i]?.tools } : {}),
+      ...(tools[i] ? { canSearch: tools[i]?.canSearch } : {}),
     })),
   });
   const parsed = rankSitesSchema.safeParse(output);

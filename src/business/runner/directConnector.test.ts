@@ -161,6 +161,23 @@ describe('DirectSiteConnector', () => {
     });
   });
 
+  it('follows a GET redirect within the same site', async () => {
+    const { fetch, seen } = fakeFetch(url =>
+      url.startsWith('https://api.example.com/')
+        ? { status: 301, location: 'https://www.example.com/api/users/1' }
+        : { status: 200, body: '{"id":"1"}' }
+    );
+    const session = await connector(fetch).open('api.example.com', 'tok');
+    expect(await session.callTool('get_user', { userId: '1' })).toMatchObject({
+      ok: true,
+      httpStatus: 200,
+    });
+    expect(seen.map(s => s[0])).toEqual([
+      'https://api.example.com/v1/users/1',
+      'https://www.example.com/api/users/1',
+    ]);
+  });
+
   it('turns a network error into a failed call', async () => {
     const fetch: FetchLike = async () => {
       throw new Error('offline');

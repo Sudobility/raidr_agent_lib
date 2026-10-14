@@ -98,31 +98,62 @@ export class DirectSiteConnector implements SiteConnector {
           ? setTimeout(() => controller.abort(), timeoutMs)
           : null;
         try {
-          const response = await fetch(request.url, {
-            method: request.method,
-            headers: request.headers,
-            ...(request.body !== undefined ? { body: request.body } : {}),
-            // A 3xx could carry the token to a host the manifest never named.
-            redirect: 'manual',
-            ...(controller ? { signal: controller.signal } : {}),
-          });
-          const { status } = response;
-          if (status === 0 || (status >= 300 && status < 400)) {
-            const location =
-              response.headers.get('location') ?? '(no location)';
-            return fail(
-              `HTTP ${status}: upstream redirected to ${location}. Redirects are not followed.`,
-              status || undefined
-            );
+          let url = request.url;
+          let response: FetchResponseLike | null = null;
+          for (let hop = 0; ; hop++) {
+            response = await fetch(url, {
+              method: request.method,
+              headers: request.headers,
+              ...(request.body !== undefined ? { body: request.body } : {}),
+              // Followed by hand, and only within the same site: a 3xx
+              // elsewhere could carry the token to a host the manifest
+              // never named.
+              redirect: 'manual',
+              ...(controller ? { signal: controller.signal } : {}),
+            });
+            const { status } = response;
+            if (status !== 0 && (status < 300 || status >= 400)) break;
+            const location = response.headers.get('location');
+            const next = location ? resolveLocation(url, location) : null;
+            let safe = false;
+            if (
+              next &&
+              request.method === 'GET' &&
+              hop < MAX_REDIRECTS &&
+              sameSite(url, next)
+            ) {
+              try {
+                // Every other check still applies; the host may be the
+                // site's other name (apex ↔ www), which sameSite confirmed.
+                const target = parseHttpUrl(next);
+                const host = target?.host ?? '';
+                assertSafeUpstream(
+                  next,
+                  {
+                    apiHost: host,
+                    baseUrl: target ? `${target.protocol}://${host}` : '',
+                  },
+                  { allowLocalhost }
+                );
+                safe = true;
+              } catch {
+                safe = false;
+              }
+            }
+            if (!safe || !next) {
+              return fail(
+                `HTTP ${status}: upstream redirected to ${location ?? '(no location)'}. Redirects to another site are not followed.`,
+                status || undefined
+              );
+            }
+            url = next;
           }
-          // A runtime that followed a redirect anyway: do not use what came back.
-          const finalHost = response.url
-            ? parseHttpUrl(response.url)?.host
-            : null;
-          const requestHost = parseHttpUrl(request.url)?.host;
-          if (finalHost && finalHost !== requestHost) {
+          if (!response) return fail('No response from the site');
+          const { status } = response;
+          // A runtime that followed a redirect anyway: only within the site.
+          if (response.url && !sameSite(request.url, response.url)) {
             return fail(
-              `HTTP ${status}: upstream redirected to ${finalHost}. Redirects are not followed.`
+              `HTTP ${status}: upstream redirected to ${parseHttpUrl(response.url)?.host ?? response.url}. Redirects to another site are not followed.`
             );
           }
           const body = await response.text();
@@ -143,4 +174,30 @@ export class DirectSiteConnector implements SiteConnector {
       close: async () => undefined,
     };
   }
+}
+
+/** Most same-site redirects followed for one call. */
+const MAX_REDIRECTS = 3;
+
+/** A `Location` header resolved against the URL that answered with it (RN-safe: no `URL`). */
+function resolveLocation(from: string, location: string): string | null {
+  const value = location.trim();
+  if (/^https?:\/\//i.test(value)) return value;
+  const base = parseHttpUrl(from);
+  if (!base) return null;
+  if (value.startsWith('//')) return `${base.protocol}:${value}`;
+  if (value.startsWith('/')) return `${base.protocol}://${base.host}${value}`;
+  return null;
+}
+
+/** `example.com`, `www.example.com` and their subdomains are one site; http may become https. */
+function sameSite(from: string, to: string): boolean {
+  const a = parseHttpUrl(from);
+  const b = parseHttpUrl(to);
+  if (!a || !b || b.hasCredentials) return false;
+  if (b.protocol !== 'https' && b.protocol !== a.protocol) return false;
+  const bare = (host: string) => host.toLowerCase().replace(/^www\./, '');
+  const x = bare(a.host);
+  const y = bare(b.host);
+  return x === y || y.endsWith(`.${x}`) || x.endsWith(`.${y}`);
 }

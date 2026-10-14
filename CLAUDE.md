@@ -66,11 +66,17 @@ Node imports, no `URL` class. The `./runner` subpath imports only `zod`,
 `@sudobility/raidr_types` and types, so the API can use it without react.
 
 Steps (one ShapeShyft endpoint each, through `AiTransport.invoke(step, input)`;
-`AgentStep` = `understand | plan-search | rank-sites | prepare | plan | extract | pick-best | dedupe`):
+`AgentStep` = `understand | plan-search | rank-sites | prepare | plan | extract | pick-best | dedupe | site-regions`):
 
 - `understandIntent(ai, { request, vocabulary?, country?, locale?, timeZone?, now? }): Promise<AgentIntent>`
   — six W's + `selection`, normalised by `toAgentIntent` (unknown W's → null,
   unknown selection → `all`, `location_needed = where.kind === 'current'`).
+  `language` is the BCP 47 tag of the language the request is written in
+  (`languageTag` normalises the case: `en`, `pt-BR`, `zh-Hant`; unusable →
+  absent). Every model step
+  that writes for the user (rank-sites reasons, prepare notes and form
+  labels, extract summaries and field labels, pick-best reason) writes in it,
+  keeping site titles and names as given; extract gets it as `language`.
 - `planSearch(ai, { request, intent, country?, locale? }): Promise<SearchPlan | null>`
   — `plan-search`: whether a web search should come first (a specific named
   thing yes, a generic or nearby request no), its `query` and `country`
@@ -81,6 +87,18 @@ Steps (one ShapeShyft endpoint each, through `AiTransport.invoke(step, input)`;
   `mergeSearchCandidates(searchFound, labelFound, hits)` (search finds first,
   deduped by apiHost, each with ≤ `MAX_HITS_PER_SITE` `searchHits` matched by
   `isOnSite`).
+- `planSites(ai, input): Promise<SitesPlan>` — the same `plan-search` call,
+  whole: `{ search: SearchPlan | null, sites: string[], country }` — the
+  well-known sites' hosts for the request in the user's region (≤8,
+  `siteHost`-normalised; the catalog's labels cannot tell them apart) and
+  the target country (the destination's for a place abroad, else the
+  user's). `planSearch` is its `search` half.
+- `classifySiteRegions(ai, sites[{domain,title,description}])` —
+  `site-regions`: where each site serves (`SiteServiceArea`: global or ISO
+  countries), only usable answers for the domains asked. Pure helpers in
+  `./serviceArea`: `registrableDomain`, `siteRegistrableDomain`,
+  `countryOfDomain` (ccTLDs, not generic-use ones like .io/.fm),
+  `serviceAreaFromDomain`, `servesCountry`.
 - `rankSites(ai, { request, intent, country?, candidates }): Promise<CandidateSite[]>`
   — model order, only input apiHosts, deduped, ≤12, `reason` set; an unusable
   answer keeps the candidates' order. A candidate's `searchHits` (≤3, snippet
@@ -103,11 +121,36 @@ Steps (one ShapeShyft endpoint each, through `AiTransport.invoke(step, input)`;
   (one result is the best without asking; a bad answer → the first result).
   A failed site whose every call was 401/403 has `needsSignIn: true` (outcome
   and `data-site-status`).
+  **GraphQL** (`./graphql`): before planning, a site's GraphQL tools are
+  introspected once (cached an hour per endpoint) and the planner gets
+  `graphqlSchemas` (root fields with args, reachable types and enums as SDL).
+  **Paging** (`./paging`): after a successful call the runner follows the
+  next pages itself — a cursor (`next_cursor`, `endCursor`…) sent back in the
+  tool's cursor parameter, a page number while pages remain, or an offset —
+  until `has_more: false`, an empty page, every dated item past the request's
+  `when` (`pastWindow`), or `MAX_AUTO_PAGES` (10) / `MAX_AUTO_ITEMS` (500);
+  page size raised to the schema's `maximum` (`withLargestPage`). The planner
+  sees those pages as one-line "page N, followed automatically".
+  **What the models see** (`./condense`): `condenseBody` — plain values
+  (cursors, totals) before lists, empty values and presentation noise inside
+  list items dropped, markup in a string turned into text with links
+  (`htmlText`), items dated outside `when` (±3 h) shown as `null` in place
+  with a NOTE line, then as many items as fit (`EXCERPT_BYTES` = 16 000).
+  Extraction reads **every** page: `condenseChunks` splits a page into
+  excerpts that together show all its items (positions kept), batched
+  ≤ `EXTRACT_BATCH_CHARS` per `extract` call, 3 in flight; items deduped by
+  source path or title; ≤ `MAX_SITE_RESULTS` (60) per site; each call asks
+  for every matching item (`completeness`; ≤ `MAX_EXTRACTED` = 30).
+  A bot-protection page (Akamai "Challenge Validation", PerimeterX, Cloudflare,
+  Imperva, DataDome) is a failed call whatever its status (`isBotChallenge`).
 - `buildPageUrl(routes, { endpoint, itemPath }, body, siteOrigins): string` —
   rules a–f of CONTRACTS_V2 (urlFields with the item's array prefix stripped
   first, then templates whose every param resolves from the item; routes by
   source strength then fewer query params; host must be a site origin or a
-  subdomain, `www.` ignored; else `''`). Helpers: `resolvePath(body, path)`,
+  subdomain, `www.` ignored), then rule f (`itemLink`: an on-site URL in a
+  link-named field, a site path, or a bare slug when the site's routes put
+  pages at `/{slug}`; the item's own fields before nested ones, never a
+  host's/venue's/image's); else `''`. `routePageUrl` is rules a–e alone. Helpers: `resolvePath(body, path)`,
   `relativeField`, `isOnSite`, `orderRoutes`, `toolEndpoint(tool)`
   (`evidence.endpointKey ?? 'METHOD pathTemplate'`).
 - Schemas (tolerant zod, `./schemas`): `understandOutputSchema`,
@@ -126,8 +169,10 @@ Steps (one ShapeShyft endpoint each, through `AiTransport.invoke(step, input)`;
   `parseCallBody`, `loadSiteContext`, `MAX_TOOLS`, `EXCERPT_BYTES`, `randomId`.
 - `DirectSiteConnector({ catalog, fetch, allowLocalhost?, timeoutMs?, maxBytes? })`:
   calls a site from the device with raidr_types' `buildUpstreamRequest` +
-  `assertSafeUpstream`; `redirect: 'manual'`, a 3xx or a response from another
-  host is a failed call; body cut at `MAX_UPSTREAM_BYTES` characters; `ok` = 2xx.
+  `assertSafeUpstream`; `redirect: 'manual'`, followed by hand only for GET
+  within the same site (apex ↔ www, http → https; ≤3, each target checked
+  again); a redirect elsewhere or a response from another site is a failed
+  call; body cut at `MAX_UPSTREAM_BYTES` characters; `ok` = 2xx.
   Never throws from `callTool`. `fetch` is a `FetchLike`.
 - `createLocalRunRecorder({ request, intent, forward?, now? })` →
   `{ writer, toImportRequest(status = 'done'): RunImportRequest }`: unfinished

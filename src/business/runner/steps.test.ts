@@ -14,8 +14,11 @@ import {
   mergeForm,
   dedupeResults,
   pickBest,
+  classifySiteRegions,
   planSearch,
+  planSites,
   prepareSites,
+  siteHost,
   rankSites,
   type SiteContextSource,
   understandIntent,
@@ -195,6 +198,132 @@ const candidate = (apiHost: string): CandidateSite => ({
   authStyle: 'none',
 });
 
+describe('planSites', () => {
+  it('returns the well-known sites as hosts, with or without a search', async () => {
+    const { ai } = scripted({
+      'plan-search': {
+        search: false,
+        country: '',
+        query: '',
+        reason: 'Generic events nearby',
+        sites: [
+          'lu.ma',
+          'https://www.eventbrite.com/d/ca--san-francisco/tech/',
+          'Meetup.com',
+          'lu.ma',
+          'not a domain',
+          42,
+        ],
+      },
+    });
+    expect(
+      await planSites(ai, { request: 'tech events this weekend', intent })
+    ).toEqual({
+      search: null,
+      sites: ['lu.ma', 'www.eventbrite.com', 'meetup.com'],
+      country: null,
+    });
+  });
+
+  it('keeps the search beside the sites, and caps the sites', async () => {
+    const { ai } = scripted({
+      'plan-search': {
+        search: true,
+        country: 'US',
+        query: 'taylor swift tickets',
+        reason: 'A named artist',
+        sites: Array.from({ length: 12 }, (_, i) => `site${i}.com`),
+      },
+    });
+    const plan = await planSites(ai, { request: 'r', intent });
+    expect(plan.search?.query).toBe('taylor swift tickets');
+    expect(plan.sites).toHaveLength(8);
+  });
+
+  it('is empty when the model fails or answers nonsense', async () => {
+    const down = scripted({ 'plan-search': new Error('model down') });
+    expect(
+      await planSites(down.ai, { request: 'r', intent, country: 'us' })
+    ).toEqual({ search: null, sites: [], country: 'US' });
+    expect(
+      await planSites(scripted({ 'plan-search': 'nonsense' }).ai, {
+        request: 'r',
+        intent,
+      })
+    ).toEqual({ search: null, sites: [], country: null });
+  });
+
+  it("takes the target country, else the user's", async () => {
+    const abroad = scripted({
+      'plan-search': { search: false, sites: [], target_country: 'gb' },
+    });
+    expect(
+      (await planSites(abroad.ai, { request: 'r', intent, country: 'US' }))
+        .country
+    ).toBe('GB');
+    const home = scripted({ 'plan-search': { search: false, sites: [] } });
+    expect(
+      (await planSites(home.ai, { request: 'r', intent, country: 'US' }))
+        .country
+    ).toBe('US');
+  });
+});
+
+describe('classifySiteRegions', () => {
+  it('asks once per domain and keeps only usable answers for those domains', async () => {
+    const { ai, seen } = scripted({
+      'site-regions': {
+        sites: [
+          {
+            domain: 'AfricaTickets.org',
+            global: false,
+            countries: ['ng', 'KE', 'xx1'],
+          },
+          { domain: 'eventbrite.com', global: true, countries: ['US'] },
+          { domain: 'vague.com', global: false, countries: [] },
+          { domain: 'not-asked.com', global: true, countries: [] },
+        ],
+      },
+    });
+    const areas = await classifySiteRegions(ai, [
+      { domain: 'africatickets.org', title: 'Africa Tickets', description: '' },
+      { domain: 'eventbrite.com', title: 'Eventbrite', description: '' },
+      { domain: 'Eventbrite.com', title: 'dup', description: '' },
+      { domain: 'vague.com', title: 'Vague', description: '' },
+    ]);
+    expect(areas).toEqual([
+      { domain: 'africatickets.org', global: false, countries: ['NG', 'KE'] },
+      { domain: 'eventbrite.com', global: true, countries: [] },
+    ]);
+    expect((seen[0]!.input.sites as unknown[]).length).toBe(3);
+  });
+
+  it('is empty without sites, and when the model fails', async () => {
+    const { ai, seen } = scripted({});
+    expect(await classifySiteRegions(ai, [])).toEqual([]);
+    expect(seen).toHaveLength(0);
+    const down = scripted({ 'site-regions': new Error('down') });
+    expect(
+      await classifySiteRegions(down.ai, [
+        { domain: 'a.com', title: 'A', description: '' },
+      ])
+    ).toEqual([]);
+  });
+});
+
+describe('siteHost', () => {
+  it('takes a host or a URL and rejects what is not a public hostname', () => {
+    expect(siteHost('LU.MA')).toBe('lu.ma');
+    expect(siteHost('https://user:pw@www.meetup.com:8443/x?y')).toBe(
+      'www.meetup.com'
+    );
+    expect(siteHost('localhost')).toBeNull();
+    expect(siteHost('10.0.0.1')).toBeNull();
+    expect(siteHost('')).toBeNull();
+    expect(siteHost(null)).toBeNull();
+  });
+});
+
 describe('planSearch', () => {
   it('sends the request, intent and region, and returns the plan', async () => {
     const { ai, seen } = scripted({
@@ -346,6 +475,9 @@ describe('rankSites', () => {
     );
     const sites = (seen[0]!.input as { sites: Array<Record<string, unknown>> })
       .sites;
+    // `query` is a keyword parameter: the site can search for what was asked.
+    expect(sites[0]!.canSearch).toBe(true);
+    expect(sites[1]!.canSearch).toBeUndefined();
     expect(sites[0]!.tools).toEqual([
       {
         name: 'search_events',

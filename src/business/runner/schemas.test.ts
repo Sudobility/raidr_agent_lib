@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  languageTag,
+  MAX_EXTRACTED,
   agentIntentSchema,
   canonicalFieldName,
   extractSchema,
@@ -173,9 +175,11 @@ describe('extractSchema', () => {
     ]);
   });
 
-  it('caps at 10 items', () => {
-    const items = Array.from({ length: 15 }, (_, i) => ({ title: `t${i}` }));
-    expect(extractSchema.parse({ items }).items).toHaveLength(10);
+  it('caps at MAX_EXTRACTED items', () => {
+    const items = Array.from({ length: MAX_EXTRACTED + 5 }, (_, i) => ({
+      title: `t${i}`,
+    }));
+    expect(extractSchema.parse({ items }).items).toHaveLength(MAX_EXTRACTED);
   });
 });
 
@@ -208,5 +212,26 @@ describe('agentIntentSchema', () => {
         query: 'x',
       }).success
     ).toBe(false);
+  });
+});
+
+describe('languageTag', () => {
+  it('normalises BCP 47 tags and refuses anything else', () => {
+    expect(languageTag('ja')).toBe('ja');
+    expect(languageTag('ZH_hant')).toBe('zh-Hant');
+    expect(languageTag('pt-br')).toBe('pt-BR');
+    expect(languageTag('english')).toBeNull();
+    expect(languageTag(7)).toBeNull();
+  });
+
+  it('is kept on the intent, and an old intent without it still validates', () => {
+    const intent = toAgentIntent(
+      { intent: 'recipe', language: 'de' },
+      'Rezept für Pad Thai'
+    );
+    expect(intent.language).toBe('de');
+    const { language: _language, ...old } = intent;
+    expect(agentIntentSchema.safeParse(old).success).toBe(true);
+    expect(agentIntentSchema.safeParse(intent).success).toBe(true);
   });
 });

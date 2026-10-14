@@ -13,6 +13,7 @@ export {
   type ToolSession,
   describeError,
   EXCERPT_BYTES,
+  isBotChallenge,
   loadSiteContext,
   MAX_TOOLS,
   parseCallBody,
@@ -34,11 +35,18 @@ export {
   pickBestSchema,
   planSchema,
   planSearchSchema,
+  MAX_KNOWN_SITES,
+  MAX_REGION_SITES,
+  siteRegionsSchema,
+  siteHost,
+  toSitesPlan,
+  type SitesPlan,
   prepareSchema,
   rankSitesSchema,
   toAgentIntent,
   toFormField,
   toSearchPlan,
+  languageTag,
   understandOutputSchema,
 } from './schemas';
 export {
@@ -51,6 +59,8 @@ export {
 export { STEP_ENDPOINTS, STEP_SCHEMAS } from './stepSchemas';
 export {
   buildPageUrl,
+  itemLink,
+  routePageUrl,
   isOnSite,
   orderRoutes,
   relativeField,
@@ -68,7 +78,11 @@ export {
   mergeForm,
   pickBest,
   type PickBestInput,
+  classifySiteRegions,
+  toolsCanSearch,
   planSearch,
+  planSites,
+  type SiteToClassify,
   type PlanSearchInput,
   prepareSites,
   type PrepareSitesInput,
@@ -89,3 +103,10 @@ export {
   type LocalRunRecorder,
   type LocalRunRecorderOptions,
 } from './recorder';
+export {
+  countryOfDomain,
+  registrableDomain,
+  serviceAreaFromDomain,
+  servesCountry,
+  siteRegistrableDomain,
+} from './serviceArea';

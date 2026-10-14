@@ -189,7 +189,28 @@ export const understandOutputSchema = z.object({
     .unknown()
     .optional()
     .transform(v => v === true),
+  language: z.unknown().optional().transform(languageTag),
 });
+
+/**
+ * A BCP 47 language tag as the agent keeps it (`en`, `de`, `pt-BR`,
+ * `zh-Hant`), or null: the primary subtag lower-cased, a script title-cased,
+ * a region upper-cased.
+ */
+export function languageTag(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const parts = value.trim().replace(/_/g, '-').split('-').filter(Boolean);
+  const [primary, ...rest] = parts;
+  if (!primary || !/^[a-z]{2,3}$/i.test(primary)) return null;
+  const tail = rest.flatMap(p =>
+    /^[a-z]{4}$/i.test(p)
+      ? [p[0]!.toUpperCase() + p.slice(1).toLowerCase()]
+      : /^([a-z]{2}|\d{3})$/i.test(p)
+        ? [p.toUpperCase()]
+        : []
+  );
+  return [primary.toLowerCase(), ...tail].join('-');
+}
 
 /**
  * Validate an `understand-intent` answer and normalise it into an
@@ -225,6 +246,7 @@ export function toAgentIntent(output: unknown, request: string): AgentIntent {
     where,
     why: raw.why,
     selection: raw.selection,
+    ...(raw.language ? { language: raw.language } : {}),
   };
 }
 
@@ -273,6 +295,10 @@ export const agentIntentSchema = z.object({
     .nullable(),
   why: z.string().max(300).nullable(),
   selection: z.enum(SELECTION_MODES as [SelectionMode, ...SelectionMode[]]),
+  language: z
+    .string()
+    .regex(/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/)
+    .optional(),
 }) satisfies z.ZodType<AgentIntent>;
 
 // =============================================================================
@@ -304,6 +330,33 @@ function countryCode(value: unknown): string | null {
     : null;
 }
 
+/** Most well-known sites `plan-search` may name. */
+export const MAX_KNOWN_SITES = 8;
+
+/**
+ * A site the model named, as a bare host (`lu.ma`, `www.eventbrite.com`), or
+ * null. Accepts a URL or a host; drops a path, a port, credentials and
+ * anything that is not a plausible public hostname.
+ */
+export function siteHost(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const text = value.trim().toLowerCase();
+  if (!text) return null;
+  let host: string;
+  try {
+    host = new URL(
+      /^[a-z][a-z0-9+.-]*:\/\//.test(text) ? text : `https://${text}`
+    ).hostname;
+  } catch {
+    return null;
+  }
+  return /^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(
+    host
+  )
+    ? host
+    : null;
+}
+
 export const planSearchSchema = z.object({
   search: z
     .unknown()
@@ -312,6 +365,82 @@ export const planSearchSchema = z.object({
   country: z.unknown().optional().transform(countryCode),
   query: optionalText(200),
   reason: optionalText(300),
+  target_country: z.unknown().optional().transform(countryCode),
+  sites: z
+    .unknown()
+    .optional()
+    .transform(v =>
+      Array.isArray(v)
+        ? [
+            ...new Set(v.map(siteHost).filter((h): h is string => h !== null)),
+          ].slice(0, MAX_KNOWN_SITES)
+        : []
+    ),
+});
+
+/** The `plan-search` answer: a web search to run first, and sites to use. */
+export interface SitesPlan {
+  /** The web search, or null when the model chose not to search. */
+  search: SearchPlan | null;
+  /**
+   * Hosts of the well-known sites for this request in the user's region
+   * (`lu.ma`, `www.eventbrite.com`), from the model's own knowledge: looked
+   * up in the catalog whether or not a web search runs.
+   */
+  sites: string[];
+  /**
+   * ISO 3166-1 alpha-2 of the country the request is about: the user's own,
+   * or the destination's for a place abroad ("Hamilton tickets in London" →
+   * GB). Null when the model gave none and the user's country is unknown.
+   * Sites that do not serve it are left out.
+   */
+  country: string | null;
+}
+
+/** The `plan-search` answer as a {@link SitesPlan}; empty when unusable. */
+export function toSitesPlan(output: unknown, country?: string): SitesPlan {
+  const fallback = countryCode(country);
+  const parsed = planSearchSchema.safeParse(output);
+  if (!parsed.success) return { search: null, sites: [], country: fallback };
+  return {
+    search: toSearchPlan(output, country),
+    sites: parsed.data.sites,
+    country: parsed.data.target_country ?? fallback,
+  };
+}
+
+// =============================================================================
+// site-regions
+// =============================================================================
+
+/** Most sites one `site-regions` call classifies. */
+export const MAX_REGION_SITES = 40;
+
+export const siteRegionsSchema = z.object({
+  sites: lenientArray(
+    z.object({
+      domain: z
+        .unknown()
+        .transform(v => (typeof v === 'string' ? v.trim().toLowerCase() : '')),
+      global: z
+        .unknown()
+        .optional()
+        .transform(v => v === true || v === 'true'),
+      countries: z
+        .unknown()
+        .optional()
+        .transform(v =>
+          Array.isArray(v)
+            ? [
+                ...new Set(
+                  v.map(countryCode).filter((c): c is string => c !== null)
+                ),
+              ]
+            : []
+        ),
+    }),
+    MAX_REGION_SITES
+  ),
 });
 
 /**
@@ -574,7 +703,7 @@ export const extractItemSchema = z.object({
 });
 
 /** Most results one site's extraction keeps. */
-export const MAX_EXTRACTED = 10;
+export const MAX_EXTRACTED = 30;
 
 /** `extract-results` output: up to 10 result cards. */
 export const extractSchema = z.object({

@@ -4,6 +4,8 @@ import type { SitePageRoute } from '@sudobility/raidr_agent_types';
 import {
   buildPageUrl,
   isOnSite,
+  itemLink,
+  routePageUrl,
   orderRoutes,
   relativeField,
   resolvePath,
@@ -166,7 +168,7 @@ describe('buildPageUrl', () => {
 
   it('b. only for the same endpoint', () => {
     expect(
-      buildPageUrl(
+      routePageUrl(
         [urlRoute],
         { endpoint: 'GET /other', itemPath: 'entries[0]' },
         body,
@@ -244,7 +246,7 @@ describe('buildPageUrl', () => {
 
   it('c. a missing or empty param skips the route', () => {
     expect(
-      buildPageUrl(
+      routePageUrl(
         [slugRoute],
         { endpoint: EP, itemPath: 'entries[3]' },
         body,
@@ -265,7 +267,7 @@ describe('buildPageUrl', () => {
       ],
     });
     expect(
-      buildPageUrl(
+      routePageUrl(
         [twoParams],
         { endpoint: EP, itemPath: 'entries[0]' },
         body,
@@ -285,7 +287,7 @@ describe('buildPageUrl', () => {
       ],
     });
     expect(
-      buildPageUrl(
+      routePageUrl(
         [extra],
         { endpoint: EP, itemPath: 'entries[0]' },
         body,
@@ -297,7 +299,7 @@ describe('buildPageUrl', () => {
   it('c. a route without params never matches (it is not about the item)', () => {
     const home = route({ url: 'https://luma.com/', params: [] });
     expect(
-      buildPageUrl(
+      routePageUrl(
         [home],
         { endpoint: EP, itemPath: 'entries[0]' },
         body,
@@ -370,7 +372,7 @@ describe('buildPageUrl', () => {
       ],
     });
     expect(
-      buildPageUrl(
+      routePageUrl(
         [off],
         { endpoint: EP, itemPath: 'entries[0]' },
         body,
@@ -378,7 +380,7 @@ describe('buildPageUrl', () => {
       )
     ).toBe('');
     expect(
-      buildPageUrl(
+      routePageUrl(
         [off, slugRoute],
         { endpoint: EP, itemPath: 'entries[0]' },
         body,
@@ -404,10 +406,10 @@ describe('buildPageUrl', () => {
 
   it('f. nothing matches → empty', () => {
     expect(
-      buildPageUrl([], { endpoint: EP, itemPath: 'entries[0]' }, body, origins)
+      routePageUrl([], { endpoint: EP, itemPath: 'entries[0]' }, body, origins)
     ).toBe('');
     expect(
-      buildPageUrl(
+      routePageUrl(
         [urlRoute],
         { endpoint: EP, itemPath: 'entries[0]' },
         body,
@@ -432,5 +434,52 @@ describe('toolEndpoint', () => {
         evidence: { endpointKey: 'GET /api/a/{id}', calls: 1 },
       })
     ).toBe('GET /api/a/{id}');
+  });
+});
+
+describe('itemLink (rule f)', () => {
+  const luma = ['https://luma.com'];
+  const slugRoute = {
+    url: 'https://luma.com/{url}/claim',
+    params: [{ name: 'url', sources: [] }],
+    urlFields: [],
+  } as unknown as SitePageRoute;
+
+  it('finds an absolute on-site URL before nested ones, never a host’s', () => {
+    expect(
+      itemLink(
+        {
+          hosts: [{ url: 'https://luma.com/user/someone' }],
+          calendar: { url: 'https://luma.com/cal' },
+          event: { name: 'X', permalink: 'https://www.luma.com/e/abc' },
+        },
+        [],
+        luma
+      )
+    ).toBe('https://www.luma.com/e/abc');
+    expect(itemLink({ url: 'https://elsewhere.com/x' }, [], luma)).toBe('');
+  });
+
+  it('resolves a site path, and a slug only when pages live at /{slug}', () => {
+    expect(itemLink({ path: '/events/42' }, [], luma)).toBe(
+      'https://luma.com/events/42'
+    );
+    expect(itemLink({ event: { url: 'a1xuboaj' } }, [slugRoute], luma)).toBe(
+      'https://luma.com/a1xuboaj'
+    );
+    expect(itemLink({ event: { url: 'a1xuboaj' } }, [], luma)).toBe('');
+    expect(itemLink({ url: 'not a slug' }, [slugRoute], luma)).toBe('');
+  });
+
+  it('is what buildPageUrl falls back to when no route matches', () => {
+    const body = { entries: [{ event: { url: 'a1xuboaj' } }] };
+    expect(
+      buildPageUrl(
+        [slugRoute],
+        { endpoint: 'GET /x', itemPath: 'entries[0]' },
+        body,
+        luma
+      )
+    ).toBe('https://luma.com/a1xuboaj');
   });
 });

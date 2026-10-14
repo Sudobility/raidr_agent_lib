@@ -39,15 +39,38 @@ import type {
   SiteContext,
   SiteRunStatus,
 } from '@sudobility/raidr_agent_types';
-import { extractSchema, planSchema } from './schemas';
+import { extractSchema, MAX_EXTRACTED, planSchema } from './schemas';
+
+/** One item as the `extract` step answers it. */
+type ExtractedItem = ReturnType<typeof extractSchema.parse>['items'][number];
 import { randomId } from './ids';
 import { buildPageUrl, toolEndpoint } from './pageUrl';
+import { condenseBody, condenseChunks, dateWindow } from './condense';
+import {
+  MAX_AUTO_ITEMS,
+  MAX_AUTO_PAGES,
+  nextPageArgs,
+  pageItems,
+  pastWindow,
+  withLargestPage,
+} from './paging';
+import {
+  introspectionArguments,
+  isGraphqlTool,
+  summarizeSchema,
+} from './graphql';
 import { dedupeResults, pickBest } from './steps';
 
 /** Most tools shown to the planner per site. */
 export const MAX_TOOLS = 40;
+/** Most characters of excerpts sent in one `extract` call. */
+export const EXTRACT_BATCH_CHARS = 32_000;
+/** `extract` calls in flight per site. */
+const EXTRACT_CONCURRENCY = 3;
+/** Most results one site contributes to a run. */
+export const MAX_SITE_RESULTS = 60;
 /** Most characters of one response kept for the planner and the extractor. */
-export const EXCERPT_BYTES = 6_000;
+export const EXCERPT_BYTES = 16_000;
 
 /** Every model decision. Returns the model's (untrusted) structured output. */
 export interface AiTransport {
@@ -259,6 +282,63 @@ function canonicalJson(value: unknown): string {
   );
 }
 
+/** Most GraphQL endpoints introspected per site and run. */
+const MAX_GRAPHQL_ENDPOINTS = 2;
+/** How long an introspected schema summary is reused (per site endpoint). */
+const GRAPHQL_SCHEMA_TTL_MS = 60 * 60 * 1000;
+const graphqlSchemaCache = new Map<string, { at: number; summary: string }>();
+
+/**
+ * Schema summaries for the GraphQL tools among `tools`, by tool name: one
+ * introspection per endpoint (cached an hour), sent through the tool itself.
+ * A site that refuses introspection simply gets none; the planner then
+ * introspects or gives up on its own.
+ */
+async function graphqlSchemas(
+  apiHost: string,
+  tools: McpTool[],
+  session: ToolSession
+): Promise<Record<string, string>> {
+  const byTool: Record<string, string> = {};
+  const byEndpoint = new Map<string, string | null>();
+  for (const tool of tools.filter(isGraphqlTool)) {
+    const endpoint = `${apiHost} ${toolEndpoint(tool)}`;
+    if (!byEndpoint.has(endpoint)) {
+      if (byEndpoint.size >= MAX_GRAPHQL_ENDPOINTS) continue;
+      const cached = graphqlSchemaCache.get(endpoint);
+      if (cached && Date.now() - cached.at < GRAPHQL_SCHEMA_TTL_MS) {
+        byEndpoint.set(endpoint, cached.summary);
+      } else {
+        let summary: string | null = null;
+        try {
+          const result = await session.callTool(
+            tool.name,
+            introspectionArguments(tool)
+          );
+          if (result.ok) summary = summarizeSchema(parseCallBody(result));
+        } catch {
+          // No schema: the planner works without it.
+        }
+        byEndpoint.set(endpoint, summary);
+        if (summary)
+          graphqlSchemaCache.set(endpoint, { at: Date.now(), summary });
+      }
+    }
+    const summary = byEndpoint.get(endpoint);
+    if (summary) byTool[tool.name] = summary;
+  }
+  return byTool;
+}
+
+/** Markers of a bot-protection page (Akamai, PerimeterX, Cloudflare, Imperva, DataDome). */
+const BOT_CHALLENGE =
+  /(<title>\s*Challenge Validation|px-captcha|_pxCaptcha|perimeterx|cf-chl-|<title>\s*Just a moment|Attention Required! \| Cloudflare|Incapsula incident|Request unsuccessful\. Incapsula|captcha-delivery\.com|geo\.captcha-delivery|Pardon Our Interruption)/i;
+
+/** Whether a response is a bot-protection challenge rather than the site's data. */
+export function isBotChallenge(text: string): boolean {
+  return BOT_CHALLENGE.test(text.slice(0, 20_000));
+}
+
 function intentDetails(intent: RunRequest['intent']) {
   return {
     what: intent.what ?? intent.intent,
@@ -309,6 +389,8 @@ export async function runSite(
       preferred
     );
     session = await deps.connector.open(apiHost, site.token);
+    const schemas = await graphqlSchemas(apiHost, tools, session);
+    const window = dateWindow(input.intent.when);
     const withLocation =
       input.intent.location_needed && input.location
         ? { location: input.location }
@@ -344,6 +426,9 @@ export async function runSite(
             description: t.description,
             inputSchema: t.inputSchema,
           })),
+          ...(Object.keys(schemas).length > 0
+            ? { graphqlSchemas: schemas }
+            : {}),
           // A snapshot: the array keeps growing after this call.
           history: [...history],
         })
@@ -385,71 +470,114 @@ export async function runSite(
           });
           continue;
         }
-        const callId = newId();
-        const running: CallData = {
-          callId,
-          apiHost,
-          tool: call.tool,
-          arguments: args,
-          status: 'running',
-        };
-        writer.write({
-          type: 'data-call',
-          id: `call:${callId}`,
-          data: running,
-        });
-        const started = Date.now();
-        let done: CallData;
-        try {
-          const result = await session.callTool(call.tool, args);
-          const ok =
-            result.ok &&
-            (result.httpStatus === undefined || result.httpStatus < 400);
-          done = {
-            ...running,
-            status: ok ? 'ok' : 'error',
-            ...(result.httpStatus !== undefined
-              ? { httpStatus: result.httpStatus }
-              : {}),
-            durationMs: Date.now() - started,
-          };
-          statuses.push(result.httpStatus);
-          const body = ok ? parseCallBody(result) : undefined;
-          // Compact JSON shows the model more of the body than pretty text.
-          const excerpt = (
-            body !== undefined ? JSON.stringify(body) : result.text
-          ).slice(0, EXCERPT_BYTES);
-          history.push({
+        const open = session;
+        // One call: streamed to the UI, recorded, kept for extraction.
+        // `page` > 1 marks a page the runner followed itself.
+        const execute = async (
+          callArgs: Record<string, unknown>,
+          page: number
+        ): Promise<unknown> => {
+          const callId = newId();
+          const running: CallData = {
+            callId,
+            apiHost,
             tool: call.tool,
-            arguments: args,
-            status: String(result.httpStatus ?? (ok ? 'ok' : 'error')),
-            excerpt,
+            arguments: callArgs,
+            status: 'running',
+          };
+          writer.write({
+            type: 'data-call',
+            id: `call:${callId}`,
+            data: running,
           });
-          if (ok)
-            responses.push({
-              callId,
-              ref: `c${responses.length + 1}`,
+          const started = Date.now();
+          let done: CallData;
+          let kept: unknown;
+          try {
+            const result = await open.callTool(call.tool, callArgs);
+            // A bot-protection page is a refusal, whatever its status.
+            const blocked = isBotChallenge(result.text);
+            const ok =
+              result.ok &&
+              !blocked &&
+              (result.httpStatus === undefined || result.httpStatus < 400);
+            done = {
+              ...running,
+              status: ok ? 'ok' : 'error',
+              ...(result.httpStatus !== undefined
+                ? { httpStatus: result.httpStatus }
+                : {}),
+              durationMs: Date.now() - started,
+            };
+            statuses.push(result.httpStatus);
+            const body = ok ? parseCallBody(result) : undefined;
+            // Condensed: cursors first, long strings cut, items outside the
+            // request's dates blanked (positions kept), so the model sees
+            // what matters of a page that would not fit.
+            const excerpt = blocked
+              ? "The site's bot protection refused this call (a challenge page, not data). Try another tool; repeating this one will not help."
+              : body !== undefined
+                ? condenseBody(body, EXCERPT_BYTES, window)
+                : result.text.slice(0, EXCERPT_BYTES);
+            history.push({
               tool: call.tool,
-              endpoint: toolEndpoint(tool),
-              excerpt,
-              body,
+              arguments: callArgs,
+              status: String(result.httpStatus ?? (ok ? 'ok' : 'error')),
+              // A followed page is summarised for the planner; extraction
+              // still reads all of it.
+              excerpt:
+                page > 1 && ok
+                  ? `page ${page}, followed automatically: ${pageItems(body).length} items`
+                  : excerpt,
             });
-        } catch (error) {
-          statuses.push(undefined);
-          done = {
-            ...running,
-            status: 'error',
-            durationMs: Date.now() - started,
-          };
-          history.push({
-            tool: call.tool,
-            arguments: args,
-            status: 'error',
-            excerpt: describeError(error),
-          });
+            if (ok) {
+              responses.push({
+                callId,
+                ref: `c${responses.length + 1}`,
+                tool: call.tool,
+                endpoint: toolEndpoint(tool),
+                excerpt,
+                body,
+              });
+              kept = body ?? null;
+            }
+          } catch (error) {
+            statuses.push(undefined);
+            done = {
+              ...running,
+              status: 'error',
+              durationMs: Date.now() - started,
+            };
+            history.push({
+              tool: call.tool,
+              arguments: callArgs,
+              status: 'error',
+              excerpt: describeError(error),
+            });
+          }
+          writer.write({ type: 'data-call', id: `call:${callId}`, data: done });
+          await options.onCall?.(done);
+          return kept;
+        };
+
+        // The first page, as large as the tool allows; then every next
+        // page that can still hold matches, up to the caps.
+        const firstArgs = withLargestPage(tool, args);
+        let body = await execute(firstArgs, 1);
+        let pageArgs = firstArgs;
+        let collected = body === undefined ? 0 : pageItems(body).length;
+        for (let page = 2; page <= MAX_AUTO_PAGES; page++) {
+          if (body === undefined || options.signal?.aborted) break;
+          if (pastWindow(body, window) || collected >= MAX_AUTO_ITEMS) break;
+          const next = nextPageArgs(tool, pageArgs, body);
+          if (!next) break;
+          const nextKey = `${call.tool} ${canonicalJson(next)}`;
+          if (made.has(nextKey)) break;
+          made.add(nextKey);
+          pageArgs = next;
+          body = await execute(next, page);
+          if (body !== undefined) collected += pageItems(body).length;
         }
-        writer.write({ type: 'data-call', id: `call:${callId}`, data: done });
-        await options.onCall?.(done);
       }
       // Only repeats this round: the planner has nothing new to try.
       if (fresh === 0) break;
@@ -481,68 +609,112 @@ export async function runSite(
     }
 
     status('extracting');
-    const shown = responses.slice(-6);
-    const extracted = extractSchema.safeParse(
-      await deps.ai.invoke('extract', {
-        request: input.request,
-        resultKind: input.intent.resultKind,
-        query: input.intent.query,
-        what: input.intent.what ?? input.intent.intent,
-        how: input.intent.how ?? null,
-        when: input.intent.when ?? null,
-        where: input.intent.where ?? null,
-        ...(input.inputs && Object.keys(input.inputs).length > 0
-          ? { inputs: input.inputs }
-          : {}),
-        ...withLocation,
-        site: { title, apiHost },
-        responses: shown.map(r => ({
-          callId: r.ref,
-          tool: r.tool,
-          endpoint: r.endpoint,
-          excerpt: r.excerpt,
-        })),
-      })
+    // Every page that came back, each as excerpts that together show all of
+    // its items, extracted in parallel batches: a long list is read whole,
+    // not just its first screen.
+    const excerpts = responses.flatMap(r =>
+      (r.body !== undefined
+        ? condenseChunks(r.body, EXCERPT_BYTES, window)
+        : [r.excerpt]
+      ).map(excerpt => ({
+        callId: r.ref,
+        tool: r.tool,
+        endpoint: r.endpoint,
+        excerpt,
+      }))
     );
+    const batches: Array<typeof excerpts> = [];
+    for (const piece of excerpts) {
+      const last = batches[batches.length - 1];
+      const size = last?.reduce((n, p) => n + p.excerpt.length, 0) ?? Infinity;
+      if (last && size + piece.excerpt.length <= EXTRACT_BATCH_CHARS)
+        last.push(piece);
+      else batches.push([piece]);
+    }
+    const extractInput = {
+      request: input.request,
+      resultKind: input.intent.resultKind,
+      query: input.intent.query,
+      what: input.intent.what ?? input.intent.intent,
+      how: input.intent.how ?? null,
+      when: input.intent.when ?? null,
+      where: input.intent.where ?? null,
+      ...(input.inputs && Object.keys(input.inputs).length > 0
+        ? { inputs: input.inputs }
+        : {}),
+      ...withLocation,
+      site: { title, apiHost },
+      // Cards are written in the user's language (the request's).
+      ...(input.intent.language ? { language: input.intent.language } : {}),
+      // Models default to about ten cards; the run wants the whole list.
+      completeness: `Return every matching item in these excerpts (there may be more than 10; up to ${MAX_EXTRACTED}), not a selection.`,
+    };
+    const answers: ExtractedItem[] = [];
+    for (let i = 0; i < batches.length; i += EXTRACT_CONCURRENCY) {
+      const round = await Promise.all(
+        batches.slice(i, i + EXTRACT_CONCURRENCY).map(async batch => {
+          const extracted = extractSchema.safeParse(
+            await deps.ai.invoke('extract', {
+              ...extractInput,
+              responses: batch,
+            })
+          );
+          return extracted.success ? extracted.data.items : [];
+        })
+      );
+      answers.push(...round.flat());
+    }
     const byRef = new Map<string, KeptResponse>();
-    for (const r of shown) {
+    for (const r of responses) {
       byRef.set(r.ref, r);
       // A model that echoes the full call id is understood too.
       byRef.set(r.callId, r);
     }
-    const items: ResultItem[] = (
-      extracted.success ? extracted.data.items : []
-    ).map(({ ref, ...item }, i) => {
-      const from = ref ? byRef.get(ref.callId) : undefined;
-      const source: ResultSource | undefined =
-        from && ref
-          ? {
-              callId: from.callId,
-              tool: from.tool,
-              endpoint: from.endpoint,
-              itemPath: ref.itemPath,
-            }
-          : undefined;
-      const pageUrl =
-        source && from && from.body !== undefined
-          ? buildPageUrl(
-              context.routes,
-              source,
-              from.body,
-              manifest.siteOrigins
-            )
-          : '';
-      return {
-        ...item,
-        id: `${apiHost}:${i}`,
-        apiHost,
-        siteTitle: title,
-        imageUrl: safeUrl(item.imageUrl),
-        sourceUrl: safeUrl(item.sourceUrl),
-        pageUrl: pageUrl ? safeUrl(pageUrl) : '',
-        ...(source ? { source } : {}),
-      };
+    // One card per item: the same item read from two excerpts or pages
+    // (same source path, or same title and first detail) counts once.
+    const seenItems = new Set<string>();
+    const unique = answers.filter(({ ref, title, fields }) => {
+      const keys = [
+        ref ? `${ref.callId} ${ref.itemPath}` : '',
+        `${title.trim().toLowerCase()} ${fields[0]?.value ?? ''}`,
+      ].filter(Boolean);
+      if (keys.some(k => seenItems.has(k))) return false;
+      keys.forEach(k => seenItems.add(k));
+      return true;
     });
+    const items: ResultItem[] = unique
+      .slice(0, MAX_SITE_RESULTS)
+      .map(({ ref, ...item }, i) => {
+        const from = ref ? byRef.get(ref.callId) : undefined;
+        const source: ResultSource | undefined =
+          from && ref
+            ? {
+                callId: from.callId,
+                tool: from.tool,
+                endpoint: from.endpoint,
+                itemPath: ref.itemPath,
+              }
+            : undefined;
+        const pageUrl =
+          source && from && from.body !== undefined
+            ? buildPageUrl(
+                context.routes,
+                source,
+                from.body,
+                manifest.siteOrigins
+              )
+            : '';
+        return {
+          ...item,
+          id: `${apiHost}:${i}`,
+          apiHost,
+          siteTitle: title,
+          imageUrl: safeUrl(item.imageUrl),
+          sourceUrl: safeUrl(item.sourceUrl),
+          pageUrl: pageUrl ? safeUrl(pageUrl) : '',
+          ...(source ? { source } : {}),
+        };
+      });
     for (const item of items)
       writer.write({
         type: 'data-result',

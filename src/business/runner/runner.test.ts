@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { McpManifest, McpTool } from '@sudobility/raidr_types';
 import type { AgentStep, RunRequest } from '@sudobility/raidr_agent_types';
 import {
+  isBotChallenge,
   type AiTransport,
   MAX_TOOLS,
   rankTools,
@@ -756,5 +757,20 @@ describe('parseCallBody', () => {
     expect(parseCallBody({ ok: true, text: '[1]' })).toEqual([1]);
     expect(parseCallBody({ ok: true, text: '<html>' })).toBeUndefined();
     expect(parseCallBody({ ok: true, text: '' })).toBeUndefined();
+  });
+});
+
+describe('isBotChallenge', () => {
+  it('recognises bot-protection pages, not ordinary data', () => {
+    expect(
+      isBotChallenge(
+        '<!DOCTYPE html><html><head><title>Challenge Validation</title>'
+      )
+    ).toBe(true);
+    expect(isBotChallenge('<div id="px-captcha"></div>')).toBe(true);
+    expect(isBotChallenge('<title>Just a moment...</title>')).toBe(true);
+    expect(
+      isBotChallenge('{"items":[{"name":"Captcha the flag night"}]}')
+    ).toBe(false);
   });
 });

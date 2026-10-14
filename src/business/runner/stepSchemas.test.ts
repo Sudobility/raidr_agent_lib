@@ -10,6 +10,7 @@ import {
   planSearchSchema,
   prepareSchema,
   rankSitesSchema,
+  siteRegionsSchema,
   STEP_ENDPOINTS,
   STEP_SCHEMAS,
   understandOutputSchema,
@@ -31,6 +32,7 @@ const ZOD: Record<AgentStep, z.ZodObject> = {
   extract: extractSchema,
   'pick-best': pickBestSchema,
   dedupe: dedupeSchema,
+  'site-regions': siteRegionsSchema,
 };
 
 /** The JSON object and the zod object name the same keys; zod's must-have keys are JSON-required. */
@@ -130,6 +132,7 @@ describe('STEP_SCHEMAS', () => {
 
   it('an answer that follows the JSON Schema parses to itself', () => {
     const understand = {
+      language: 'en',
       intent: 'event_search',
       labels: ['events'],
       slots: [],
@@ -154,8 +157,17 @@ describe('STEP_SCHEMAS', () => {
       country: 'CN',
       query: '周杰伦 演唱会 门票',
       reason: 'A named artist',
+      sites: ['damai.cn', 'www.maoyan.com'],
+      target_country: 'CN',
     };
     expect(planSearchSchema.parse(search)).toEqual(search);
+    const regions = {
+      sites: [
+        { domain: 'eventbrite.com', global: true, countries: [] },
+        { domain: 'africatickets.org', global: false, countries: ['NG', 'KE'] },
+      ],
+    };
+    expect(siteRegionsSchema.parse(regions)).toEqual(regions);
     const plan = { done: false, calls: [{ tool: 't', arguments: '{}' }] };
     expect(planSchema.parse(plan)).toEqual(plan);
   });
