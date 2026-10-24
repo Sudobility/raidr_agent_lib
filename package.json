@@ -1,6 +1,6 @@
 {
   "name": "@sudobility/raidr_agent_lib",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "Business logic library for RaidrAgent with Zustand stores",
   "type": "module",
   "main": "dist/index.js",
@@ -48,38 +48,38 @@
   "author": "Sudobility",
   "license": "BUSL-1.1",
   "peerDependencies": {
-    "@sudobility/raidr_agent_client": "^0.0.10",
-    "@sudobility/raidr_agent_types": "^0.0.10",
-    "@sudobility/types": "^1.9.72",
+    "@sudobility/raidr_agent_client": "^0.0.11",
+    "@sudobility/raidr_agent_types": "^0.0.11",
+    "@sudobility/types": "^1.9.76",
     "@tanstack/react-query": ">=5.0.0",
     "react": ">=18.0.0",
     "zod": "^4.0.0",
     "zustand": ">=5.0.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.38.0",
-    "@sudobility/raidr_agent_client": "^0.0.10",
-    "@sudobility/raidr_agent_types": "^0.0.10",
-    "@sudobility/types": "^1.9.72",
-    "@tanstack/react-query": "^5.90.5",
-    "@testing-library/react": "^16.3.2",
-    "@testing-library/react-hooks": "^8.0.1",
-    "@types/react": "^19.2.2",
-    "@typescript-eslint/eslint-plugin": "^8.46.2",
-    "@typescript-eslint/parser": "^8.46.2",
-    "eslint": "^9.39.2",
-    "eslint-config-prettier": "^10.1.5",
-    "eslint-plugin-prettier": "^5.4.1",
-    "eslint-plugin-react-hooks": "^5.2.0",
-    "globals": "^16.4.0",
-    "jsdom": "^28.1.0",
-    "prettier": "^3.7.4",
-    "react": "^19.2.1",
-    "react-dom": "^19.2.4",
+    "@eslint/js": "~9.39.5",
+    "@sudobility/raidr_agent_client": "^0.0.11",
+    "@sudobility/raidr_agent_types": "^0.0.11",
+    "@sudobility/types": "^1.9.76",
+    "@tanstack/react-query": "~5.104.5",
+    "@testing-library/react": "~16.3.3",
+    "@testing-library/react-hooks": "~8.0.1",
+    "@types/react": "~19.3.0",
+    "@typescript-eslint/eslint-plugin": "~8.72.0",
+    "@typescript-eslint/parser": "~8.72.0",
+    "eslint": "~9.39.5",
+    "eslint-config-prettier": "~10.1.8",
+    "eslint-plugin-prettier": "~5.5.7",
+    "eslint-plugin-react-hooks": "~5.2.0",
+    "globals": "~16.5.0",
+    "jsdom": "~28.1.0",
+    "prettier": "~3.9.10",
+    "react": "~19.3.1",
+    "react-dom": "~19.3.1",
     "typescript": "~5.9.3",
-    "vitest": "^4.0.15",
-    "zod": "^4.4.3",
-    "zustand": "^5.0.8"
+    "vitest": "~4.1.12",
+    "zod": "~4.6.5",
+    "zustand": "~5.0.16"
   },
   "repository": {
     "type": "git",
@@ -90,6 +90,6 @@
     "url": "https://github.com/johnqh/raidr_agent_lib/issues"
   },
   "dependencies": {
-    "@sudobility/raidr_types": "^0.1.16"
+    "@sudobility/raidr_types": "^0.1.17"
   }
 }
