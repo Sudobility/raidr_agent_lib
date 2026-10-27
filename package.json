@@ -1,6 +1,6 @@
 {
   "name": "@sudobility/raidr_agent_lib",
-  "version": "0.0.15",
+  "version": "0.0.16",
   "description": "Business logic library for RaidrAgent with Zustand stores",
   "type": "module",
   "main": "dist/index.js",
@@ -48,7 +48,7 @@
   "author": "Sudobility",
   "license": "BUSL-1.1",
   "peerDependencies": {
-    "@sudobility/raidr_agent_client": "^0.0.13",
+    "@sudobility/raidr_agent_client": "^0.0.14",
     "@sudobility/raidr_agent_types": "^0.0.12",
     "@sudobility/types": "^1.9.76",
     "@tanstack/react-query": ">=5.0.0",
@@ -58,7 +58,7 @@
   },
   "devDependencies": {
     "@eslint/js": "~10.0.1",
-    "@sudobility/raidr_agent_client": "^0.0.13",
+    "@sudobility/raidr_agent_client": "^0.0.14",
     "@sudobility/raidr_agent_types": "^0.0.12",
     "@sudobility/types": "^1.9.76",
     "@tanstack/react-query": "~5.104.5",

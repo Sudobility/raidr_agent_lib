@@ -9,7 +9,7 @@
       },
       "devDependencies": {
         "@eslint/js": "~10.0.1",
-        "@sudobility/raidr_agent_client": "^0.0.13",
+        "@sudobility/raidr_agent_client": "^0.0.14",
         "@sudobility/raidr_agent_types": "^0.0.12",
         "@sudobility/types": "^1.9.76",
         "@tanstack/react-query": "~5.104.5",
@@ -33,7 +33,7 @@
         "zustand": "~5.0.16",
       },
       "peerDependencies": {
-        "@sudobility/raidr_agent_client": "^0.0.13",
+        "@sudobility/raidr_agent_client": "^0.0.14",
         "@sudobility/raidr_agent_types": "^0.0.12",
         "@sudobility/types": "^1.9.76",
         "@tanstack/react-query": ">=5.0.0",
@@ -182,7 +182,7 @@
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
-    "@sudobility/raidr_agent_client": ["@sudobility/raidr_agent_client@0.0.13", "https://npm.pkg.github.com/download/@sudobility/raidr_agent_client/0.0.13/14c9458dc82b5099d1cfc83eb8da1e77b903398f", { "peerDependencies": { "@sudobility/types": "^1.9.76", "@tanstack/react-query": ">=5.0.0", "react": ">=18.0.0" } }, "sha512-NMBdboFmTPnoAGj7iNQm8VIFIWN8IOirJuvgRmUtgotnuvXAeDdECi/NSMcOTt0N3SWnDW6IZkQHbJ96HZbtAA=="],
+    "@sudobility/raidr_agent_client": ["@sudobility/raidr_agent_client@0.0.14", "https://npm.pkg.github.com/download/@sudobility/raidr_agent_client/0.0.14/e7f23093aa0642290378da70d99029e9f5b2ce46", { "peerDependencies": { "@sudobility/types": "^1.9.76", "@tanstack/react-query": ">=5.0.0", "react": ">=18.0.0" } }, "sha512-FCc46FvgQ5Jn0GByi/VUSvzmHuclsrohsWk1e3Q05fQZceDdGgmC/ChOx4cJfdYqnqXQLuSN2ZQVzDMF/cmtEw=="],
 
     "@sudobility/raidr_agent_types": ["@sudobility/raidr_agent_types@0.0.12", "https://npm.pkg.github.com/download/@sudobility/raidr_agent_types/0.0.12/3f986b3d488a9d5aa09e5eb170e2b7ed7913b829", { "peerDependencies": { "@sudobility/raidr_types": "^0.1.17", "@sudobility/types": "^1.9.76" } }, "sha512-CoQyDcycsVFLDwAHxq8kI29+NyKawPXZxam2vXBIWZsPopJ8TgIoRiJO0jYmmg6y31cbZhTuRUoCfH5VBRiLCA=="],
 
