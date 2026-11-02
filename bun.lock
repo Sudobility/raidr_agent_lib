@@ -5,13 +5,13 @@
     "": {
       "name": "@sudobility/raidr_agent_lib",
       "dependencies": {
-        "@sudobility/raidr_types": "^0.1.17",
+        "@sudobility/raidr_types": "^0.1.18",
       },
       "devDependencies": {
         "@eslint/js": "~10.0.1",
-        "@sudobility/raidr_agent_client": "^0.0.14",
-        "@sudobility/raidr_agent_types": "^0.0.12",
-        "@sudobility/types": "^1.9.76",
+        "@sudobility/raidr_agent_client": "^0.0.15",
+        "@sudobility/raidr_agent_types": "^0.0.13",
+        "@sudobility/types": "^1.9.78",
         "@tanstack/react-query": "~5.104.5",
         "@testing-library/react": "~16.3.3",
         "@testing-library/react-hooks": "~8.0.1",
@@ -33,9 +33,9 @@
         "zustand": "~5.0.16",
       },
       "peerDependencies": {
-        "@sudobility/raidr_agent_client": "^0.0.14",
-        "@sudobility/raidr_agent_types": "^0.0.12",
-        "@sudobility/types": "^1.9.76",
+        "@sudobility/raidr_agent_client": "^0.0.15",
+        "@sudobility/raidr_agent_types": "^0.0.13",
+        "@sudobility/types": "^1.9.78",
         "@tanstack/react-query": ">=5.0.0",
         "react": ">=18.0.0",
         "zod": "^4.0.0",
@@ -182,13 +182,13 @@
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
-    "@sudobility/raidr_agent_client": ["@sudobility/raidr_agent_client@0.0.14", "https://npm.pkg.github.com/download/@sudobility/raidr_agent_client/0.0.14/e7f23093aa0642290378da70d99029e9f5b2ce46", { "peerDependencies": { "@sudobility/types": "^1.9.76", "@tanstack/react-query": ">=5.0.0", "react": ">=18.0.0" } }, "sha512-FCc46FvgQ5Jn0GByi/VUSvzmHuclsrohsWk1e3Q05fQZceDdGgmC/ChOx4cJfdYqnqXQLuSN2ZQVzDMF/cmtEw=="],
+    "@sudobility/raidr_agent_client": ["@sudobility/raidr_agent_client@0.0.15", "https://npm.pkg.github.com/download/@sudobility/raidr_agent_client/0.0.15/c890d3b23097f7d5ba9beb87ce0397abaa1bdc91", { "peerDependencies": { "@sudobility/types": "^1.9.78", "@tanstack/react-query": ">=5.0.0", "react": ">=18.0.0" } }, "sha512-f38yygQymA3kwktJkzg4zO1caB67xfd0yQ6CpJa/0RRl1Uyx5X6+2rccsSh7OBEcg+2/h/oDxprOJAhySwNrwQ=="],
 
-    "@sudobility/raidr_agent_types": ["@sudobility/raidr_agent_types@0.0.12", "https://npm.pkg.github.com/download/@sudobility/raidr_agent_types/0.0.12/3f986b3d488a9d5aa09e5eb170e2b7ed7913b829", { "peerDependencies": { "@sudobility/raidr_types": "^0.1.17", "@sudobility/types": "^1.9.76" } }, "sha512-CoQyDcycsVFLDwAHxq8kI29+NyKawPXZxam2vXBIWZsPopJ8TgIoRiJO0jYmmg6y31cbZhTuRUoCfH5VBRiLCA=="],
+    "@sudobility/raidr_agent_types": ["@sudobility/raidr_agent_types@0.0.13", "https://npm.pkg.github.com/download/@sudobility/raidr_agent_types/0.0.13/499c21cf05ee0c6b45fa93261f0bb7fab6968790", { "peerDependencies": { "@sudobility/raidr_types": "^0.1.17", "@sudobility/types": "^1.9.78" } }, "sha512-KIZ+SDzqkx9B+C2zQyPXuOPysiz83xy1avEygufUZeFVKftJVRMlog4u2TDEji5WFtRA/Yxq8vhi8swOstdGyQ=="],
 
-    "@sudobility/raidr_types": ["@sudobility/raidr_types@0.1.17", "https://npm.pkg.github.com/download/@sudobility/raidr_types/0.1.17/f246af9df2af79da36479793940690428dd0e59f", { "peerDependencies": { "@sudobility/types": "^1.9.76", "zod": "^4.0.0" } }, "sha512-k6f4lshm8/Os7EVT7LDJrVeh3iGXm0Rbi5ceOLLs+pGXHNL9G7SFoAzyzKiuQNXIAcOeR7GwSkvF2L8a5i32NA=="],
+    "@sudobility/raidr_types": ["@sudobility/raidr_types@0.1.18", "https://npm.pkg.github.com/download/@sudobility/raidr_types/0.1.18/a914eb311d9b82f438357d4d68f15d34f609b904", { "peerDependencies": { "@sudobility/types": "^1.9.78", "zod": "^4.0.0" } }, "sha512-o66R+yX8nxZ/pZKEhJz0ge2GhCnDyYfIDUMeYa39LmM+9isZb/t/lXYYuFSLDbqJzS6PTirO9AVKJvK9LrHZDA=="],
 
-    "@sudobility/types": ["@sudobility/types@1.9.76", "https://npm.pkg.github.com/download/@sudobility/types/1.9.76/71635156f72fd9461107d5f147b3dc1c49f863d0", {}, "sha512-b7maZHR5wM84VlQ+l9R+2guzSOrExog6OUNy1oCe7h0abW13syycmnLQL0g+qql0aQ84qTB4A0mJelhY3Vef4Q=="],
+    "@sudobility/types": ["@sudobility/types@1.9.78", "https://npm.pkg.github.com/download/@sudobility/types/1.9.78/19ca0df5ad7d490bafc1b84384a8002f5dbc29ea", {}, "sha512-W6DYMUf7D0cVVUHDv5T8YZ339Wyay6xPx0CsdfNVgHDsm1ISDLhwacUwlM9xnvwXHGuAhP77wRVVo3uKGZe46Q=="],
 
     "@tanstack/query-core": ["@tanstack/query-core@5.104.5", "", {}, "sha512-Q94gI8Opd+CbdVNOdj8ZCyV8WqLYitrDq1t96Xc8WZT6lY0r5iRnJLXYDxMex7EEf2v+mXvn4FcjaBKSxXZQ9A=="],
 
