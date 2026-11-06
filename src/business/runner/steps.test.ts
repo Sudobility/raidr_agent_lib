@@ -598,6 +598,30 @@ function contextOf(
 }
 
 describe('prepareSites', () => {
+  it('requires a provider key even when the model says no sign-in', async () => {
+    const { ai } = scripted({
+      prepare: { tools: ['search_events'], login: 'none', fields: [] },
+    });
+    const context = contextOf('places.googleapis.com', 'none');
+    context.manifest.auth = {
+      style: 'header',
+      headerName: 'X-Goog-Api-Key',
+      credentialType: 'api_key',
+    };
+    const result = await prepareSites(
+      ai,
+      { context: async () => context },
+      {
+        request: 'find cafes',
+        intent,
+        sites: ['places.googleapis.com'],
+      }
+    );
+    expect(result.sites[0]).toMatchObject({
+      login: 'required',
+      credentialType: 'api_key',
+    });
+  });
   const catalog: SiteContextSource = {
     async context(apiHost) {
       if (apiHost === 'gone.example') throw new Error('404');

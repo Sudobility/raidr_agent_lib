@@ -463,7 +463,19 @@ async function prepareSite(
         ? 'fallback'
         : 'none';
     return {
-      plan: { apiHost, title: manifest.title, tools, login },
+      plan: {
+        apiHost,
+        title: manifest.title,
+        tools,
+        login: manifest.auth.credentialType === 'api_key' ? 'required' : login,
+        ...(manifest.auth.credentialType === 'api_key'
+          ? {
+              credentialType: 'api_key' as const,
+              loginReason:
+                'Enter your API key from this provider to use these tools.',
+            }
+          : {}),
+      },
       fields: [],
     };
   }
@@ -473,15 +485,28 @@ async function prepareSite(
     MAX_PREPARED_TOOLS
   );
   if (tools.length === 0) tools = ranked.slice(0, 3).map(t => t.name);
-  const login = noCredential ? 'none' : answer.login;
+  const login =
+    manifest.auth.credentialType === 'api_key'
+      ? 'required'
+      : noCredential
+        ? 'none'
+        : answer.login;
   const plan: SitePlan = {
     apiHost,
     title: manifest.title,
     tools,
     login,
-    ...(login !== 'none' && answer.loginReason
-      ? { loginReason: answer.loginReason }
+    ...(manifest.auth.credentialType === 'api_key'
+      ? { credentialType: 'api_key' as const }
       : {}),
+    ...(manifest.auth.credentialType === 'api_key'
+      ? {
+          loginReason:
+            'Enter your API key from this provider to use these tools.',
+        }
+      : login !== 'none' && answer.loginReason
+        ? { loginReason: answer.loginReason }
+        : {}),
     ...(answer.unsupported ? { unsupported: answer.unsupported } : {}),
   };
   return { plan, fields: answer.unsupported ? [] : answer.fields };

@@ -27,8 +27,14 @@ export class TokenWatcher {
     auth: SiteAuthInfo['auth'],
     private readonly userPaths: string[]
   ) {
+    // `extractCredential` reads the token off the request's headers/cookies.
+    // A `query`-style site carries it in the URL query instead, which this
+    // header/cookie watcher cannot observe, so it narrows to `none` here —
+    // keeping `CredentialAuth` within the styles extractCredential supports
+    // and making a query-style site a no-op for header extraction.
+    const style = auth.style === 'query' ? 'none' : auth.style;
     this.auth = {
-      style: auth.style,
+      style,
       ...(auth.headerName ? { headerName: auth.headerName } : {}),
       ...(auth.cookieName ? { cookieName: auth.cookieName } : {}),
       ...(auth.tokenPrefix ? { tokenPrefix: auth.tokenPrefix } : {}),
