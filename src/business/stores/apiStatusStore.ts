@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { HealthCheckData } from '@sudobility/raidr_agent_types';
+import type { HealthCheckData } from '@sudobility/types';
 
 /**
  * Placeholder Zustand store: remembers the last health check result.

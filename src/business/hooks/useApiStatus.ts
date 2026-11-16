@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useHealth } from '@sudobility/raidr_agent_client';
-import type { HealthCheckData, Optional } from '@sudobility/raidr_agent_types';
-import type { NetworkClient } from '@sudobility/types';
+import type { Optional } from '@sudobility/raidr_agent_types';
+import type { HealthCheckData, NetworkClient } from '@sudobility/types';
 import { useApiStatusStore } from '../stores/apiStatusStore';
 
 export interface UseApiStatusReturn {
