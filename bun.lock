@@ -9,8 +9,8 @@
       },
       "devDependencies": {
         "@eslint/js": "~10.0.1",
-        "@sudobility/raidr_agent_client": "^0.0.25",
-        "@sudobility/raidr_agent_types": "^0.0.28",
+        "@sudobility/raidr_agent_client": "^0.0.26",
+        "@sudobility/raidr_agent_types": "^0.0.29",
         "@sudobility/types": "^1.11.2",
         "@tanstack/react-query": "~5.104.5",
         "@testing-library/react": "~16.3.3",
@@ -33,8 +33,8 @@
         "zustand": "~5.0.16",
       },
       "peerDependencies": {
-        "@sudobility/raidr_agent_client": "^0.0.25",
-        "@sudobility/raidr_agent_types": "^0.0.28",
+        "@sudobility/raidr_agent_client": "^0.0.26",
+        "@sudobility/raidr_agent_types": "^0.0.29",
         "@sudobility/types": "^1.11.2",
         "@tanstack/react-query": ">=5.0.0",
         "react": ">=18.0.0",
@@ -182,9 +182,9 @@
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
-    "@sudobility/raidr_agent_client": ["@sudobility/raidr_agent_client@0.0.25", "https://npm.pkg.github.com/download/@sudobility/raidr_agent_client/0.0.25/dc7f2bb8fe1e10390224ce674708a9f79fb58aa6", { "peerDependencies": { "@sudobility/types": "^1.11.2", "@tanstack/react-query": ">=5.0.0", "react": ">=18.0.0" } }, "sha512-/XLogRXyuyDQq53BThvhlb1uiKBAnZSu6VMT9mEjRAds2dnLR8iQZdNWmi5Ug3lvdhD/DmEVx3ohmUSaLuMd8Q=="],
+    "@sudobility/raidr_agent_client": ["@sudobility/raidr_agent_client@0.0.26", "https://npm.pkg.github.com/download/@sudobility/raidr_agent_client/0.0.26/dc2b31a15a007accf4439deeb539de5e4debdc53", { "peerDependencies": { "@sudobility/types": "^1.11.2", "@tanstack/react-query": ">=5.0.0", "react": ">=18.0.0" } }, "sha512-AMVMBHtHyF/yZ6RS2emUpcuilE25LMtfM8sy5ZprFJeiSiWb3VKNK/1ChdcZsW/YjB0hC1ZO8pBOVAwJmvzqOQ=="],
 
-    "@sudobility/raidr_agent_types": ["@sudobility/raidr_agent_types@0.0.28", "https://npm.pkg.github.com/download/@sudobility/raidr_agent_types/0.0.28/72587edea2ac1260200b275ce638cc416ffd2699", { "peerDependencies": { "@sudobility/raidr_types": "^0.1.24", "@sudobility/types": "^1.11.2" } }, "sha512-6n74KJR+nf0jFOWI1yyXbvGT8iq1r1axvjMd1fBAMNorA2A2iv2NzR5hUeQN91gsFm6O++IebVypdjO5kgFPOA=="],
+    "@sudobility/raidr_agent_types": ["@sudobility/raidr_agent_types@0.0.29", "https://npm.pkg.github.com/download/@sudobility/raidr_agent_types/0.0.29/f6b189c56989c3dfaada01144027f5d37b2dfdb0", { "peerDependencies": { "@sudobility/raidr_types": "^0.1.26", "@sudobility/types": "^1.11.2" } }, "sha512-tpM5Kfbb5pyHRFR6+SLbeljmfe2UP5Zdu7B5xXjBkf9lwqVx0NKml2EsTyH6qBPiImN+Rel3IStEclwW4FtXxw=="],
 
     "@sudobility/raidr_types": ["@sudobility/raidr_types@0.1.26", "https://npm.pkg.github.com/download/@sudobility/raidr_types/0.1.26/855b84fead9030a5d607faf8b20289ad6670bcf5", { "peerDependencies": { "@sudobility/types": "^1.11.2", "zod": "^4.0.0" } }, "sha512-ODXj8pP/XNqqDBYvSWRqpNBKZBopuIH6xXVwWtLNsYoCWo8d+ByJMIsZ4rZvkaj8yqs4OEckUpjL6Gsg1Wlfhw=="],
 
